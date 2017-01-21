@@ -2,228 +2,228 @@
 
 namespace TCG\Voyager\Database;
 
-use Doctrine\DBAL\Schema\Table as DoctrineTable;
 use Doctrine\DBAL\Schema\Index;
 use Doctrine\DBAL\Schema\SchemaException;
+use Doctrine\DBAL\Schema\Table as DoctrineTable;
 
 class Table
 {
-	protected $table;
-	protected $originalKeys;
-	protected $columns;
-	protected $originalColumns;
+    protected $table;
+    protected $originalKeys;
+    protected $columns;
+    protected $originalColumns;
 
-	// todo: improve checking for existing columns
-	//        improve adding new columns to the table. how can that be done?
+    // todo: improve checking for existing columns
+    //        improve adding new columns to the table. how can that be done?
 
-	public function __construct($table)
-	{
-		if($table instanceof DoctrineTable) {
-			$this->table = $table;
-		} else if(is_string($table)) {
-			$this->table = Schema::getDoctrineTable($table);
-		} else {
-			throw new \InvalidArgumentException("Invalid table");
-		}
+    public function __construct($table)
+    {
+        if ($table instanceof DoctrineTable) {
+            $this->table = $table;
+        } elseif (is_string($table)) {
+            $this->table = Schema::getDoctrineTable($table);
+        } else {
+            throw new \InvalidArgumentException('Invalid table');
+        }
 
-		if(! Schema::tableExists($this->name)) {
-			throw SchemaException::tableDoesNotExist($this->name);
-		}
-		
-		$this->columns = $this->setupColumns();
-		$this->originalColumns = $this->setupColumns(true);
-		$this->originalKeys = $this->setupKeys();
-	}
+        if (!Schema::tableExists($this->name)) {
+            throw SchemaException::tableDoesNotExist($this->name);
+        }
 
-	public function __get($property)
-	{
-		$getter = 'get' . ucfirst($property);
+        $this->columns = $this->setupColumns();
+        $this->originalColumns = $this->setupColumns(true);
+        $this->originalKeys = $this->setupKeys();
+    }
 
-		if(! method_exists($this, $getter)) {
-			throw new \Exception("Property {$property} doesn't exist or is unavailable");
-		}
+    public function __get($property)
+    {
+        $getter = 'get'.ucfirst($property);
 
-		return $this->$getter();
-	}
+        if (!method_exists($this, $getter)) {
+            throw new \Exception("Property {$property} doesn't exist or is unavailable");
+        }
 
-	public function __set($property, $value)
-	{
-		$setter = 'set' . ucfirst($property);
+        return $this->$getter();
+    }
 
-		if(! method_exists($this, $setter)) {
-			throw new \Exception("Property {$property} doesn't exist or is unavailable");
-		}
+    public function __set($property, $value)
+    {
+        $setter = 'set'.ucfirst($property);
 
-		$this->$setter($value);
-	}
+        if (!method_exists($this, $setter)) {
+            throw new \Exception("Property {$property} doesn't exist or is unavailable");
+        }
 
-	public function getName()
-	{
-		return $this->table->getName();
-	}
+        $this->$setter($value);
+    }
 
-	public function getColumns()
-	{
-		return $this->columns;
-	}
+    public function getName()
+    {
+        return $this->table->getName();
+    }
 
-	public function getOriginalColumns()
-	{
-		return $this->originalColumns;
-	}
+    public function getColumns()
+    {
+        return $this->columns;
+    }
 
-	public function getKeys()
-	{
-		return $this->setupKeys();
-	}
+    public function getOriginalColumns()
+    {
+        return $this->originalColumns;
+    }
 
-	public function getOriginalKeys()
-	{
-		return $this->originalKeys;
-	}
+    public function getKeys()
+    {
+        return $this->setupKeys();
+    }
 
-	protected function validateKey($key)
-	{
-		$availableKeys = [
-			'',
-			'PRI',
-			'UNI',
-			'MUL',
-		];
+    public function getOriginalKeys()
+    {
+        return $this->originalKeys;
+    }
 
-		$key = strtoupper(trim($key));
+    protected function validateKey($key)
+    {
+        $availableKeys = [
+            '',
+            'PRI',
+            'UNI',
+            'MUL',
+        ];
 
-		return in_array($key, $availableKeys) ? $key : false;
-	}
+        $key = strtoupper(trim($key));
 
-	public function changeKey($column, $key)
-	{
-		// TODO: Add Foreign keys support?
-			// hasForeignKey , getForeignKey , getForeignKeys , addForeignKeyConstraint , removeForeignKey
+        return in_array($key, $availableKeys) ? $key : false;
+    }
 
-		if(($newKey = $this->validateKey($key)) === false) {
-			throw new \InvalidArgumentException("Key {$key} is invalid");
-		}
+    public function changeKey($column, $key)
+    {
+        // TODO: Add Foreign keys support?
+            // hasForeignKey , getForeignKey , getForeignKeys , addForeignKeyConstraint , removeForeignKey
 
-		$currentKey = $this->keys[$column];
+        if (($newKey = $this->validateKey($key)) === false) {
+            throw new \InvalidArgumentException("Key {$key} is invalid");
+        }
 
-		// if the key already exists
-		if($currentKey && ($currentKey->type == $newKey)) {
-			return;
-		}
+        $currentKey = $this->keys[$column];
 
-		// Drop current key
-		$this->dropKey($currentKey);
+        // if the key already exists
+        if ($currentKey && ($currentKey->type == $newKey)) {
+            return;
+        }
 
-		// Create new key
-		$this->addKey($column, $newKey);
-	}
+        // Drop current key
+        $this->dropKey($currentKey);
 
-	protected function dropKey($key)
-	{
-		switch ($key->type) {
-			case 'PRI':
-				$this->table->dropPrimaryKey();
-				break;
+        // Create new key
+        $this->addKey($column, $newKey);
+    }
 
-			case 'UNI':
-			case 'MUL':
-				$this->table->dropIndex($key->name);
-				break;
-		}
-	}
+    protected function dropKey($key)
+    {
+        switch ($key->type) {
+            case 'PRI':
+                $this->table->dropPrimaryKey();
+                break;
 
-	protected function addKey($column, $key)
-	{
-		// NOTE: Composite keys are not supported for now
-		$column = [$column];
+            case 'UNI':
+            case 'MUL':
+                $this->table->dropIndex($key->name);
+                break;
+        }
+    }
 
-		switch ($key) {
-			case 'PRI':
-				$this->table->setPrimaryKey($column);
-				break;
+    protected function addKey($column, $key)
+    {
+        // NOTE: Composite keys are not supported for now
+        $column = [$column];
 
-			case 'UNI':
-				$this->table->addUniqueIndex($column);
-				break;
+        switch ($key) {
+            case 'PRI':
+                $this->table->setPrimaryKey($column);
+                break;
 
-			case 'MUL':
-				$this->table->addIndex($column);
-				break;
-		}
-	}
+            case 'UNI':
+                $this->table->addUniqueIndex($column);
+                break;
 
-	public function getDoctrineColumn($column)
-	{
-		return $this->table->getColumn($column);
-	}
+            case 'MUL':
+                $this->table->addIndex($column);
+                break;
+        }
+    }
 
-	public function hasColumn($column)
-	{
-		return $this->table->hasColumn($column);
-	}
+    public function getDoctrineColumn($column)
+    {
+        return $this->table->getColumn($column);
+    }
 
-	protected function setupColumns($clone = false)
-	{
-		$doctrineColumns = $clone ? $this->cloneDoctrineColumns() : $this->table->getColumns();
-		$columns = [];
+    public function hasColumn($column)
+    {
+        return $this->table->hasColumn($column);
+    }
 
-		foreach ($doctrineColumns as $column) {
-			$column = new Column($column, $this);
-			$columns[$column->name] = $column;
-		}
+    protected function setupColumns($clone = false)
+    {
+        $doctrineColumns = $clone ? $this->cloneDoctrineColumns() : $this->table->getColumns();
+        $columns = [];
 
-		return $columns;
-	}
+        foreach ($doctrineColumns as $column) {
+            $column = new Column($column, $this);
+            $columns[$column->name] = $column;
+        }
 
-	protected function cloneDoctrineColumns()
-	{
-		$cloned = [];
+        return $columns;
+    }
 
-		foreach ($this->table->getColumns() as $column) {
-			$cloned[] = clone $column;
-		}
+    protected function cloneDoctrineColumns()
+    {
+        $cloned = [];
 
-		return $cloned;
-	}
+        foreach ($this->table->getColumns() as $column) {
+            $cloned[] = clone $column;
+        }
 
-	protected function setupKeys()
-	{
-		// Note: this currently doesn't support Composite Keys
+        return $cloned;
+    }
 
-		if(! $this->columns) {
-			return [];
-		}
+    protected function setupKeys()
+    {
+        // Note: this currently doesn't support Composite Keys
 
-		$keys = [];
+        if (!$this->columns) {
+            return [];
+        }
 
-		foreach ($this->columns as $column) {
-			$keys[$column->name] = null;
-		}
+        $keys = [];
 
-		foreach ($this->table->getIndexes() as $indexName => $index) {
-			// Get only the first column
-			// This won't work for composite keys
-			// For now, let's keep things simple
-			$columnName = $index->getColumns()[0];
+        foreach ($this->columns as $column) {
+            $keys[$column->name] = null;
+        }
 
-			$keys[$columnName] = (object) [
-				'type' => $this->getIndexType($index),
-				'name' => $indexName
-			];
-		}
+        foreach ($this->table->getIndexes() as $indexName => $index) {
+            // Get only the first column
+            // This won't work for composite keys
+            // For now, let's keep things simple
+            $columnName = $index->getColumns()[0];
 
-		return $keys;
-	}
+            $keys[$columnName] = (object) [
+                'type' => $this->getIndexType($index),
+                'name' => $indexName,
+            ];
+        }
 
-	protected function getIndexType(Index $index)
-	{
-		if($index->isPrimary()) {
-			return 'PRI';
-		} else if($index->isUnique()) {
-			return 'UNI';
-		} else {
-			return 'MUL';
-		}
-	}
+        return $keys;
+    }
+
+    protected function getIndexType(Index $index)
+    {
+        if ($index->isPrimary()) {
+            return 'PRI';
+        } elseif ($index->isUnique()) {
+            return 'UNI';
+        } else {
+            return 'MUL';
+        }
+    }
 }
