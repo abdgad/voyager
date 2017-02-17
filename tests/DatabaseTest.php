@@ -2,13 +2,17 @@
 
 namespace TCG\Voyager\Tests;
 
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use TCG\Voyager\Facades\DBSchema;
 
 class DatabaseTest extends TestCase
 {
+    const ON = 'on';
+    const OFF = 'on';
+
     use DatabaseTransactions;
 
     public function setUp()
@@ -18,913 +22,162 @@ class DatabaseTest extends TestCase
         $this->install();
     }
 
+    // TODO: Should have one for each driver later
+    protected $types = [
+        'string' => 'varchar',
+    ];
+
+    protected function table($name, $oldName = null, $callback = null, $options = [])
+    {
+        if ($oldName instanceof \Closure) {
+            if (is_array($callback)) {
+                $options = $callback;
+            }
+
+            $callback = $oldName;
+            $oldName = 'New Table';
+
+        }
+
+        $table = new Blueprint($name, $callback);
+
+        $columns = [];
+
+        foreach ($table->getColumns() as $column) {
+            $columns[] = [
+                'name' => $column->name,
+                'oldName' => '',
+                'type' => [
+                    'name' => isset($this->types[$column->type]) ? $this->types[$column->type] : $column->type,
+                ],
+                'length' => null,
+                'fixed' => false,
+                'unsigned' => (boolean) $column->unsigned,
+                'autoincrement' => (boolean) $column->autoIncrement,
+                'notnull' => false,
+                'default' => null,
+            ];
+        }
+
+        return [
+            'name' => $name,
+            'oldName' => $oldName,
+            'columns' => $columns,
+            'indexes' => [],
+            'primaryKeyName' => false,
+            'foreignKeys' => [],
+            'options' => $options,
+        ];
+    }
+
+    protected function assertTableExists($table)
+    {
+        $this->assertTrue(Schema::hasTable($table));
+    }
+
+    protected function assertTableMatch($name, array $structure)
+    {
+        $columns = DBSchema::describeTable($name);
+        $columnNames = $columns->pluck('field');
+
+        // Test that all expected columns exists
+        foreach ($structure['columns'] as $column) {
+            $this->assertContains($column['name'], $columnNames);
+        }
+
+        $columnNames = collect($structure['columns'])->pluck('name');
+
+        // Test that all columns are expected
+        foreach ($columns as $column) {
+            $this->assertContains($column['field'], $columnNames);
+        }
+
+        // Test that column data matches
+        foreach ($structure['columns'] as $expected) {
+            $column = $columns->filter(function ($item) use ($expected) {
+                return $item['field'] == $expected['name'];
+            })->first();
+
+            // Test type
+            $this->assertEquals(
+                strtolower($expected['type']['name']),
+                strtolower($column['type'])
+            );
+
+            // Test nullable
+            $this->assertEquals(
+                $expected['notnull'] == false,
+                $column['null'] == 'YES'
+            );
+
+            // TODO: Test something else
+        }
+    }
+
     public function test_can_create_table()
-    {
-        Auth::loginUsingId(1);
-
-        // Create table
-        $this->post(route('voyager.database.store'), [
-            'name'     => 'voyagertest',
-            'field'    => [
-                'id',
-                'tiny_int_field',
-                'small_int_field',
-                'med_int_field',
-                'integer_field',
-                'big_int_field',
-                'string_field',
-                'text_field',
-                'med_text_field',
-                'long_text_field',
-                'float_field',
-                'double_field',
-                'decimal_field',
-                'boolean_field',
-                'enum_field',
-                'date_field',
-                'date_time_field',
-                'time_field',
-                'time_stamp_field',
-                'binary_field',
-                'created_at & updated_at',
-            ],
-            'type'     => [
-                'integer',
-                'tinyInteger',
-                'smallInteger',
-                'mediumInteger',
-                'integer',
-                'bigInteger',
-                'string',
-                'text',
-                'mediumText',
-                'longText',
-                'float',
-                'double',
-                'decimal',
-                'boolean',
-                'enum',
-                'date',
-                'dateTime',
-                'time',
-                'timestamp',
-                'binary',
-                'timestamp',
-            ],
-            'enum'     => [
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                'valueA,valueB',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-            ],
-            'nullable' => [
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-            ],
-            'key'      => [
-                'PRI',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-            ],
-            'default'  => [
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                'CURRENT_TIMESTAMP',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully created voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Test column type
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-        $this->assertEquals('integer', $columns[0]->type);
-        $this->assertEquals('integer', $columns[1]->type);
-        $this->assertEquals('integer', $columns[2]->type);
-        $this->assertEquals('integer', $columns[3]->type);
-        $this->assertEquals('integer', $columns[4]->type);
-        $this->assertEquals('integer', $columns[5]->type);
-        $this->assertEquals('varchar', $columns[6]->type);
-        $this->assertEquals('text', $columns[7]->type);
-        $this->assertEquals('text', $columns[8]->type);
-        $this->assertEquals('text', $columns[9]->type);
-        $this->assertEquals('float', $columns[10]->type);
-        $this->assertEquals('float', $columns[11]->type);
-        $this->assertEquals('numeric', $columns[12]->type);
-        $this->assertEquals('tinyint(1)', $columns[13]->type);
-        $this->assertEquals('varchar', $columns[14]->type);
-        $this->assertEquals('date', $columns[15]->type);
-        $this->assertEquals('datetime', $columns[16]->type);
-        $this->assertEquals('time', $columns[17]->type);
-        $this->assertEquals('datetime', $columns[18]->type);
-        $this->assertEquals('blob', $columns[19]->type);
-        $this->assertEquals('datetime', $columns[20]->type);
-        $this->assertEquals('datetime', $columns[21]->type);
-    }
-
-    public function test_can_create_nullable_column()
-    {
-        Auth::loginUsingId(1);
-
-        // Create table
-        $this->post(route('voyager.database.store'), [
-            'name'     => 'voyagertest',
-            'field'    => [
-                'string_field',
-            ],
-            'type'     => [
-                'string',
-            ],
-            'nullable' => [
-                '1',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully created voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Test column type
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-
-        $this->assertEquals('0', $columns[0]->notnull); // inverse in sqlite (notnull)
-    }
-
-    public function test_can_create_primary_key_column()
-    {
-        Auth::loginUsingId(1);
-
-        // Create table
-        $this->post(route('voyager.database.store'), [
-            'name'     => 'voyagertest',
-            'field'    => [
-                'id',
-            ],
-            'type'     => [
-                'integer',
-            ],
-            'nullable' => [
-                '0',
-            ],
-            'key'      => [
-                'PRI',
-            ],
-        ]);
-
-        /// Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully created voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Test column type
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-        $this->assertEquals('1', $columns[0]->pk);
-    }
-
-    public function test_can_create_unique_key_column()
-    {
-        Auth::loginUsingId(1);
-
-        // Create table
-        $this->post(route('voyager.database.store'), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'name',
-            ],
-            'type'  => [
-                'string',
-            ],
-            'key'   => [
-                'UNI',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully created voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Test column type
-        $columns = DB::select(DB::raw('PRAGMA INDEX_LIST(voyagertest)'));
-
-        $this->assertEquals('1', $columns[0]->unique);
-    }
-
-    public function test_can_create_column_with_default_value()
-    {
-        Auth::loginUsingId(1);
-
-        // Create table
-        $this->post(route('voyager.database.store'), [
-            'name'    => 'voyagertest',
-            'field'   => [
-                'name',
-            ],
-            'type'    => [
-                'string',
-            ],
-            'default' => [
-                'this-is-a-default-value',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully created voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Test column type
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-        $this->assertEquals("'this-is-a-default-value'", $columns[0]->dflt_value);
-    }
-
-    public function test_can_update_table_with_same_fields()
-    {
-        Auth::loginUsingId(1);
-
-        // Setup table
-        $this->post(route('voyager.database.store'), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-                'address',
-                'created_at & updated_at',
-            ],
-            'type'  => [
-                'integer',
-                'string',
-                'text',
-                'timestamp',
-            ],
-            'key'   => [
-                'PRI',
-                '',
-                '',
-                '',
-            ],
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Update table with same fields
-        $this->put(route('voyager.database.update', ['voyagertest']), [
-            'name'           => 'voyagertest',
-            'original_name'  => 'voyagertest',
-            'field'          => [
-                'id',
-                'title',
-                'address',
-                'created_at',
-                'updated_at',
-            ],
-            'original_field' => [
-                'id',
-                'title',
-                'address',
-                'created_at',
-                'updated_at',
-            ],
-            'delete_field'   => [
-                '0',
-                '0',
-                '0',
-                '0',
-                '0',
-            ],
-            'type'           => [
-                'integer',
-                'string',
-                'text',
-                'timestamp',
-                'timestamp',
-            ],
-            'key'            => [
-                'PRI',
-                '',
-                '',
-                '',
-                '',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully updated voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-        $this->assertEquals('id', $columns[0]->name);
-        $this->assertEquals('title', $columns[1]->name);
-        $this->assertEquals('address', $columns[2]->name);
-        $this->assertEquals('created_at', $columns[3]->name);
-        $this->assertEquals('updated_at', $columns[4]->name);
-    }
-
-    public function test_can_change_table_name()
     {
         $this->disableExceptionHandling();
 
         Auth::loginUsingId(1);
 
-        // Setup table
+        // TODO: Test more column types
         $this->post(route('voyager.database.store'), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-            ],
-            'type'  => [
-                'integer',
-            ],
-            'key'   => [
-                'PRI',
-            ],
-        ]);
+            'create_model' => static::OFF,
+            'create_migration' => static::OFF,
+            'table' => json_encode($table = $this->table('voyagertest', function (Blueprint $table) {
+                // TODO: Test more types
 
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Test update table with same fields
-        $this->put(route('voyager.database.update', ['voyagertest']), [
-            'name'          => 'voyagerpost',
-            'original_name' => 'voyagertest',
+                //$table->bigInteger('bigInteger');
+                //$table->binary('binary');
+                $table->boolean('boolean');
+                //$table->char('char');
+                $table->date('date');
+                //$table->dateTime('dateTime');
+                //$table->decimal('decimal');
+                //$table->double('double');
+                //$table->enum('enum', ['foo', 'bar']);
+                //$table->float('float');
+                $table->integer('integer');
+                //$table->json('json');
+                //$table->jsonb('jsonb');
+                //$table->longText('longText');
+                //$table->mediumInteger('mediumInteger');
+                //$table->mediumText('mediumText');
+                //$table->smallInteger('smallInteger');
+                //$table->string('string');
+                $table->text('text');
+                $table->time('time');
+                //$table->tinyInteger('tinyInteger');
+                //$table->timestamp('timestamp');
+            })),
+            '_token' => csrf_token(),
         ]);
 
         // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully updated voyagerpost table',
-            'alert-type' => 'success',
+        $this->assertRedirectedToRoute('voyager.database.edit', [
+            'table' => 'voyagertest',
         ]);
 
         // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagerpost'));
-    }
+        $this->assertTableExists('voyagertest');
 
-    public function test_can_change_column_name()
-    {
-        Auth::loginUsingId(1);
+        // Test that table match expectations
+        $this->assertTableMatch('voyagertest', $table);
 
-        // Setup table
-        $this->post(route('voyager.database.store'), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-            ],
-            'type'  => [
-                'integer',
-                'string',
-            ],
-            'key'   => [
-                'PRI',
-                '',
-            ],
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Update table with same fields
-        $this->put(route('voyager.database.update', ['voyagertest']), [
-            'name'           => 'voyagertest',
-            'field'          => [
-                'id',
-                'headline',
-            ],
-            'original_field' => [
-                'id',
-                'title',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully updated voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-        $this->assertEquals('id', $columns[0]->name);
-        $this->assertEquals('headline', $columns[1]->name);
-    }
-
-    public function test_can_change_column_type()
-    {
-        Auth::loginUsingId(1);
-
-        // Setup table
-        $this->post(route('voyager.database.store'), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'  => [
-                'integer',
-                'string',
-                'text',
-            ],
-            'key'   => [
-                'PRI',
-                '',
-                '',
-            ],
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Update table with same fields
-        $this->put(route('voyager.database.update', ['voyagertest']), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'  => [
-                'integer',
-                'text',
-                'string',
-            ],
-            'key'   => [
-                'PRI',
-                '',
-                '',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully updated voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Test column types. Sqlite using Affinty that will change type name https://www.sqlite.org/datatype3.html
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-        $this->assertEquals('INTEGER', $columns[0]->type);
-        $this->assertEquals('CLOB', $columns[1]->type);
-        $this->assertEquals('VARCHAR(255)', $columns[2]->type);
-    }
-
-    public function test_can_change_nullable()
-    {
-        Auth::loginUsingId(1);
-
-        // Setup table
-        $this->post(route('voyager.database.store'), [
-            'name'     => 'voyagertest',
-            'field'    => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'     => [
-                'integer',
-                'string',
-                'text',
-            ],
-            'key'      => [
-                'PRI',
-                '',
-                '',
-            ],
-            'nullable' => [
-                '0',
-                '1',
-                '0',
-            ],
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Update table with same fields
-        $this->put(route('voyager.database.update', ['voyagertest']), [
-            'name'     => 'voyagertest',
-            'field'    => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'     => [
-                'integer',
-                'text',
-                'string',
-            ],
-            'key'      => [
-                'PRI',
-                '',
-                '',
-            ],
-            'nullable' => [
-                '0',
-                '0',
-                '1',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully updated voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Test nullable changes
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-        $this->assertEquals('1', $columns[0]->notnull);
-        $this->assertEquals('1', $columns[1]->notnull);
-        $this->assertEquals('0', $columns[2]->notnull);
-    }
-
-    public function test_can_change_key_to_unique()
-    {
-        Auth::loginUsingId(1);
-
-        // Setup table
-        $this->post(route('voyager.database.store'), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'  => [
-                'integer',
-                'string',
-                'text',
-            ],
-            'key'   => [
-                'PRI',
-                '',
-                '',
-            ],
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Update table with same fields
-        $this->put(route('voyager.database.update', ['voyagertest']), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'  => [
-                'integer',
-                'text',
-                'string',
-            ],
-            'key'   => [
-                'PRI',
-                'UNI',
-                '',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully updated voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        $columns = DB::select(DB::raw('PRAGMA INDEX_LIST(voyagertest)'));
-        $this->assertEquals('1', $columns[0]->unique);
-    }
-
-    // We can only one PRIMARY key actually.
-    public function test_can_change_to_add_primary_key()
-    {
-        Auth::loginUsingId(1);
-
-        // Setup table
-        $this->post(route('voyager.database.store'), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'  => [
-                'integer',
-                'string',
-                'text',
-            ],
-            'key'   => [
-                'PRI',
-                '',
-                '',
-            ],
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Update table with same fields
-        $this->put(route('voyager.database.update', ['voyagertest']), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'  => [
-                'integer',
-                'text',
-                'string',
-            ],
-            'key'   => [
-                'PRI',
-                'PRI',
-                '',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully updated voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-        $this->assertEquals('1', $columns[0]->pk);
-        $this->assertEquals('0', $columns[1]->pk);
-        $this->assertEquals('0', $columns[2]->pk);
-    }
-
-    public function test_can_drop_column()
-    {
-        Auth::loginUsingId(1);
-
-        // Setup table
-        $this->post(route('voyager.database.store'), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'  => [
-                'integer',
-                'string',
-                'text',
-            ],
-            'key'   => [
-                'PRI',
-                '',
-                '',
-            ],
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Update table with same fields
-        $this->put(route('voyager.database.update', ['voyagertest']), [
-            'name'           => 'voyagertest',
-            'field'          => [
-                'id',
-                'title',
-                'content',
-            ],
-            'original_field' => [
-                'id',
-                'title',
-                'content',
-            ],
-            'delete_field'   => [
-                '0',
-                '0',
-                '1',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully updated voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Test total columns after dropped
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-        $this->assertEquals(2, collect($columns)->count());
-    }
-
-    public function test_can_change_default_value()
-    {
-        Auth::loginUsingId(1);
-
-        // Setup table
-        $this->post(route('voyager.database.store'), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'  => [
-                'integer',
-                'string',
-                'text',
-            ],
-            'key'   => [
-                'PRI',
-                '',
-                '',
-            ],
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Update table with same fields
-        $this->put(route('voyager.database.update', ['voyagertest']), [
-            'name'    => 'voyagertest',
-            'field'   => [
-                'id',
-                'title',
-                'content',
-            ],
-            'default' => [
-                '',
-                'this is a new default value',
-                'another default value',
-            ],
-        ]);
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully updated voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        // Test total columns after dropped
-        $columns = DB::select(DB::raw('PRAGMA table_info(voyagertest)'));
-        $this->assertEquals('', $columns[0]->dflt_value);
-        $this->assertEquals("'this is a new default value'", $columns[1]->dflt_value);
-        $this->assertEquals("'another default value'", $columns[2]->dflt_value);
-    }
-
-    public function test_can_delete_table()
-    {
-        Auth::loginUsingId(1);
-
-        // Setup table
-        $this->post(route('voyager.database.store'), [
-            'name'  => 'voyagertest',
-            'field' => [
-                'id',
-                'title',
-                'content',
-            ],
-            'type'  => [
-                'integer',
-                'string',
-                'text',
-            ],
-            'key'   => [
-                'PRI',
-                '',
-                '',
-            ],
-        ]);
-
-        // Test table exist
-        $this->assertTrue(Schema::hasTable('voyagertest'));
-
-        $this->delete(route('voyager.database.destroy', ['voyagertest']));
-
-        // Test redirect to correct page
-        $this->assertRedirectedToRoute('voyager.database.index', [], [
-            'message'    => 'Successfully deleted voyagertest table',
-            'alert-type' => 'success',
-        ]);
-
-        // Test table exist
-        $this->assertFalse(Schema::hasTable('voyagertest'));
+        // TODO: Test nullable
+        // TODO: Test primary key
+        // TODO: Test unique
+        // TODO: Test default value
+        // TODO: Test updating table without making changes
+        // TODO: Test updating table and making changes
+        // TODO: Test renaming table name
+        // TODO: Test renaming column name
+        // TODO: Test change column type
+        // TODO: Test change nullable
+        // TODO: Test change key to unique
+        // TODO: Test add primary key
+        // TODO: Test drop column
+        // TODO: Test change default value
+        // TODO: Test delete table
     }
 }
