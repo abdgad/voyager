@@ -2,11 +2,11 @@
 
 namespace TCG\Voyager\Tests;
 
-use Illuminate\Support\Facades\Auth;
 use Doctrine\DBAL\Schema\SchemaException;
-use TCG\Voyager\Database\Types\Type;
+use Illuminate\Support\Facades\Auth;
 use TCG\Voyager\Database\Schema\SchemaManager;
 use TCG\Voyager\Database\Schema\Table;
+use TCG\Voyager\Database\Types\Type;
 use TCG\Voyager\Traits\AlertsMessages;
 
 class DatabaseTest extends TestCase
@@ -129,7 +129,7 @@ class DatabaseTest extends TestCase
             $this->alertException(SchemaException::tableDoesNotExist($table['name']))
         );
     }
-    
+
     protected function can_rename_table()
     {
         $this->table['name'] = 'table_new_name_test';
@@ -161,7 +161,7 @@ class DatabaseTest extends TestCase
         $oldColumn = $this->table['columns'][$column]['oldName'];
         $newColumn = 'details_renamed_test';
         $this->table['columns'][$column]['name'] = $newColumn;
-        
+
         $dbTable = $this->update_table($this->table);
 
         $this->assertFalse($dbTable->hasColumn($oldColumn));
